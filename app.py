@@ -5,7 +5,7 @@ import random
 from rdkit import Chem
 from streamlit_ketcher import st_ketcher
 
-# ================== БАЗА ДАННЫХ СО SMILES ==================
+# ================== БАЗА ДАННЫХ СО SMILES И ФАКТАМИ ==================
 chemical_data_full = {
     "Ароматические системы": {
         "Бензол": {"молекулярная": "C6H6", "структурная": "C6H6", "smiles": "c1ccccc1", "факт": "Простейший ароматический углеводород."},
@@ -35,8 +35,7 @@ chemical_data_full = {
 }
 # =====================================================================
 
-# --- ИСПРАВЛЕНИЕ: Этот блок должен быть здесь, в начале скрипта ---
-# Он гарантирует, что все переменные в session_state существуют до их первого использования.
+# --- Инициализация состояния сессии ---
 if 'answered_questions' not in st.session_state:
     st.session_state.answered_questions = []
 if 'current_question' not in st.session_state:
@@ -45,8 +44,6 @@ if 'show_answer' not in st.session_state:
     st.session_state.show_answer = False
 if 'game_mode' not in st.session_state:
     st.session_state.game_mode = "Стандартный (Название -> Формула)"
-# --------------------------------------------------------------------
-
 
 def compare_smiles(smiles1, smiles2):
     """Сравнивает две строки SMILES, приводя их к каноническому виду."""
@@ -82,9 +79,11 @@ def get_new_question(category):
     st.session_state.current_question = {
         "name": compound_name,
         "formula_type": formula_type,
-        "formula": data[formula_type],
-        "smiles": data["smiles"],
-        "fact": data["fact"]
+        "formula": data.get("formula", ""), # Используем .get() для безопасности
+        "smiles": data.get("smiles", ""), # Используем .get() для безопасности
+        # --- ИСПРАВЛЕНИЕ: Используем data.get() вместо data[] ---
+        # Это предотвратит падение, если "факт" отсутствует.
+        "fact": data.get("fact", "Интересный факт для этого соединения еще не добавлен.")
     }
 
 # --- Интерфейс приложения ---
@@ -106,8 +105,6 @@ with st.sidebar:
         reset_game(selected_category, selected_mode)
         st.rerun()
 
-# --- Основная часть экрана ---
-# Теперь эта проверка будет работать корректно, т.к. st.session_state.current_question уже создан
 if not st.session_state.current_question:
     st.info("Выберите категорию и режим в меню слева, затем нажмите 'Начать / Сбросить игру'.")
 else:
