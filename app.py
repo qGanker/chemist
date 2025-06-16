@@ -50,44 +50,38 @@ if 'game_mode' not in st.session_state:
 if 'user_drawing' not in st.session_state:
     st.session_state.user_drawing = ""
 
-# --- ИЗМЕНЕНО: Функция теперь проверяет каждый нарисованный фрагмент ---
+# --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Самый надежный метод сравнения ---
 def compare_structures(smiles_drawn, smiles_correct):
     """
-    Сравнивает структуры. Умная версия: разделяет нарисованное на фрагменты
-    и проверяет, совпадает ли хотя бы один из них с правильным ответом.
+    Сравнивает структуры, приводя обе к канонической форме Кекуле.
+    Это решает проблемы с разными представлениями ароматических колец.
     """
     if not smiles_drawn or not smiles_correct:
         return False
     
-    # Сначала получаем эталонный "отпечаток" правильной молекулы
+    mol_drawn = Chem.MolFromSmiles(smiles_drawn)
     mol_correct = Chem.MolFromSmiles(smiles_correct)
-    if mol_correct is None:
-        return False # Ошибка в нашей базе данных
-    key_correct = inchi.MolToInchiKey(mol_correct)
 
-    # Теперь разделяем то, что нарисовал пользователь, на отдельные молекулы
-    # (по стандартному разделителю ".")
-    drawn_fragments_smiles = smiles_drawn.split('.')
-    
-    # Проверяем каждый нарисованный фрагмент
-    for fragment_smiles in drawn_fragments_smiles:
-        if not fragment_smiles:
-            continue # Пропускаем пустые фрагменты
-        
-        mol_fragment = Chem.MolFromSmiles(fragment_smiles)
-        
-        if mol_fragment is None:
-            continue # Пропускаем, если фрагмент нарисован некорректно
-            
-        key_fragment = inchi.MolToInchiKey(mol_fragment)
-        
-        # Если "отпечаток" фрагмента совпал с эталонным - это победа!
-        if key_fragment == key_correct:
-            return True
-            
-    # Если мы прошли все фрагменты и не нашли совпадений, ответ неверный
-    return False
+    if mol_drawn is None or mol_correct is None:
+        return False
 
+    # 1. Принудительно кекулизируем обе молекулы (превращаем в структуры с явными связями)
+    try:
+        Chem.Kekulize(mol_drawn)
+        Chem.Kekulize(mol_correct)
+    except:
+        # Если кекулизация не удалась, возвращаемся к старому методу InChIKey как запаснму
+        key_drawn = inchi.MolToInchiKey(mol_drawn)
+        key_correct = inchi.MolToInchiKey(mol_correct)
+        return key_drawn == key_correct
+        
+    # 2. Превращаем кекулизированные молекулы в канонический SMILES
+    # kekuleSmiles=True гарантирует, что на выходе будет структура с явными связями
+    kekule_smiles_drawn = Chem.MolToSmiles(mol_drawn, canonical=True, kekuleSmiles=True)
+    kekule_smiles_correct = Chem.MolToSmiles(mol_correct, canonical=True, kekuleSmiles=True)
+
+    # 3. Сравниваем стандартизированные строки
+    return kekule_smiles_drawn == kekule_smiles_correct
 
 # --- Остальные функции (reset_game, get_new_question) остаются без изменений ---
 def reset_game(category, mode):
@@ -117,7 +111,7 @@ def get_new_question(category):
         "fact": data.get("fact", "Интересный факт для этого соединения еще не добавлен.")
     }
 
-# --- Интерфейс приложения ---
+# --- Интерфейс приложения (без изменений) ---
 st.set_page_config(layout="wide")
 st.title("🎨 Химический тренажер с режимом рисования")
 
@@ -142,23 +136,21 @@ else:
     q = st.session_state.current_question
     mode = st.session_state.game_mode
 
+    # Логика для режима рисования (без изменений)
     if mode == "✍️ Режим рисования (Название -> Структура)":
         st.subheader("Нарисуйте структурную формулу для:")
         st.info(f"## {q['name']}")
-        
-        # --- НОВОЕ: Небольшая подсказка для пользователя ---
         st.caption("Совет: старайтесь рисовать только одну молекулу для ответа.")
         
         if not st.session_state.show_answer:
             user_smiles = st_ketcher(key="ketcher_input")
-            
             if st.button("Проверить рисунок", use_container_width=True):
                 st.session_state.user_drawing = user_smiles
                 st.session_state.show_answer = True
                 st.rerun()
 
         if st.session_state.show_answer:
-            # Вызываем нашу новую "умную" функцию сравнения
+            # Используем нашу новую супер-надежную функцию
             is_correct = compare_structures(st.session_state.user_drawing, q['smiles'])
 
             if is_correct:
@@ -170,13 +162,11 @@ else:
                 st_ketcher(value=q['smiles'], key="ketcher_solution")
 
             st.markdown(f"**💡 Интересный факт:** {q['fact']}")
-            
             if st.button("Следующий вопрос", use_container_width=True):
                 get_new_question(selected_category)
                 st.rerun()
                 
-    else:
-        # --- Код для текстовых режимов остается без изменений ---
+    else: # Текстовые режимы
         col1, col2 = st.columns([2, 1.5])
         with col1:
             if mode == "Стандартный (Название -> Формула)":
@@ -189,7 +179,6 @@ else:
                 correct_answer = q['name']
 
             user_answer = st.text_input("Ваш ответ:", key="user_input", disabled=st.session_state.show_answer)
-
             if st.button("Проверить", disabled=st.session_state.show_answer, use_container_width=True):
                 cleaned_user = user_answer.strip().upper().replace("-", "")
                 cleaned_correct = correct_answer.strip().upper() if mode == "Обратный (Формула -> Название)" else correct_answer.strip().upper().replace("-", "")
