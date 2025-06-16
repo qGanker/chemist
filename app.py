@@ -3,7 +3,7 @@
 import streamlit as st
 import random
 
-# ================== ОБНОВЛЕННАЯ БАЗА ДАННЫХ ==================
+# ================== БАЗА ДАННЫХ ХИМИЧЕСКИХ ФОРМУЛ ==================
 chemical_data_full = {
     "Алканы": {
         "Метан": {"молекулярная": "CH4", "структурная": "CH4", "факт": "Основной компонент природного газа."},
@@ -23,7 +23,6 @@ chemical_data_full = {
 # =====================================================================
 
 # --- Инициализация состояния сессии ---
-# Добавили переменные для отслеживания отвеченных вопросов и режима игры
 if 'answered_questions' not in st.session_state:
     st.session_state.answered_questions = []
 if 'current_question' not in st.session_state:
@@ -31,7 +30,7 @@ if 'current_question' not in st.session_state:
 if 'show_answer' not in st.session_state:
     st.session_state.show_answer = False
 if 'game_mode' not in st.session_state:
-    st.session_state.game_mode = "Стандартный"
+    st.session_state.game_mode = "Стандартный (Название -> Формула)"
 
 def reset_game(category, mode):
     """Сбрасывает игру для выбранной категории и режима."""
@@ -43,27 +42,26 @@ def reset_game(category, mode):
 def get_new_question(category):
     """Генерирует новый, еще не заданный вопрос."""
     st.session_state.show_answer = False
-    if category == "Смешанный режим":
-        # Код для смешанного режима...
-        pass # Упростим пример, оставив только категории
-    else:
-        full_list = list(chemical_data_full[category].keys())
-        # Выбираем только из тех, на которые еще не отвечали
-        unanswered_list = [q for q in full_list if q not in st.session_state.answered_questions]
+    
+    # В этом блоке мы предполагаем, что пользователь выбрал конкретную категорию
+    full_list = list(chemical_data_full[category].keys())
+    unanswered_list = [q for q in full_list if q not in st.session_state.answered_questions]
+    
+    if not unanswered_list:
+        st.session_state.current_question = None # Вопросы кончились
+        return
         
-        if not unanswered_list:
-            st.session_state.current_question = None # Вопросы кончились
-            return
-            
-        compound_name = random.choice(unanswered_list)
-
+    compound_name = random.choice(unanswered_list)
     formulas = chemical_data_full[category][compound_name]
     formula_type = random.choice(["молекулярная", "структурная"])
-    
+    formula_string = formulas[formula_type]
+
+    # --- ИСПРАВЛЕНО: Мы явно создаем словарь с ключами, которые будем использовать ---
+    # Это гарантирует, что ключ 'formula' всегда будет присутствовать.
     st.session_state.current_question = {
         "name": compound_name,
         "formula_type": formula_type,
-        "formula": formulas[formula_type],
+        "formula": formula_string, # Явно задаем ключ 'formula'
         "fact": formulas["факт"]
     }
 
@@ -75,19 +73,20 @@ st.title("🧪 Продвинутый тренажер химических фо
 # --- Боковая панель ---
 with st.sidebar:
     st.title("Настройки игры")
+    # Убеждаемся, что есть дефолтное значение
+    default_category_index = 0 
     selected_category = st.selectbox(
         "1. Выберите категорию:",
-        list(chemical_data_full.keys())
+        list(chemical_data_full.keys()),
+        index=default_category_index
     )
     
-    # --- НОВОЕ: Блок для выбора режима игры ---
     selected_mode = st.radio(
         "2. Выберите режим:",
         ["Стандартный (Название -> Формула)", "Обратный (Формула -> Название)"],
         key="game_mode_selector"
     )
 
-    # --- НОВОЕ: Кнопка для старта/сброса игры ---
     if st.button("Начать / Сбросить игру", use_container_width=True):
         reset_game(selected_category, selected_mode)
         st.rerun()
@@ -96,33 +95,33 @@ with st.sidebar:
 if not st.session_state.current_question:
     st.info("Выберите категорию и режим в меню слева, затем нажмите 'Начать / Сбросить игру'.")
 else:
-    # --- НОВОЕ: Используем колонки для лучшего вида ---
     col1, col2 = st.columns([2, 1.5])
 
     with col1:
         q = st.session_state.current_question
         mode = st.session_state.game_mode
         
-        # --- НОВОЕ: Логика для разных режимов игры ---
         if mode == "Стандартный (Название -> Формула)":
             st.write(f"Введите **{q['formula_type']}** формулу для соединения:")
             st.info(f"## {q['name']}")
             correct_answer = q['formula']
         else: # Обратный режим
             st.write(f"Введите **название** соединения для формулы:")
+            # --- ИСПРАВЛЕНО: Убеждаемся, что обращаемся к ключу 'formula', который мы создали ---
             st.info(f"## `{q['formula']}`")
             correct_answer = q['name']
 
         user_answer = st.text_input("Ваш ответ:", key="user_input", disabled=st.session_state.show_answer)
 
-        # --- ИЗМЕНЕНО: Кнопка проверки ответа ---
         if st.button("Проверить", disabled=st.session_state.show_answer, use_container_width=True):
             cleaned_user = user_answer.strip().upper().replace("-", "")
             cleaned_correct = correct_answer.strip().upper().replace("-", "")
             
             if cleaned_user == cleaned_correct:
                 st.success("✅ Правильно!")
-                st.session_state.answered_questions.append(q['name'])
+                # Добавляем в список отвеченных, только если ответ правильный
+                if q['name'] not in st.session_state.answered_questions:
+                    st.session_state.answered_questions.append(q['name'])
             else:
                 st.error(f"❌ Неверно. Правильный ответ: **{correct_answer}**")
             
@@ -136,19 +135,17 @@ else:
                 st.rerun()
 
     with col2:
-        # --- НОВОЕ: Панель прогресса и счета ---
         st.subheader("Ваш прогресс")
         total_questions = len(chemical_data_full[selected_category])
         answered_count = len(st.session_state.answered_questions)
         
-        # Считаем правильные ответы (простой счетчик)
         score = answered_count
         st.metric(label="Правильных ответов", value=f"{score} из {total_questions}")
         
-        # Прогресс-бар
-        progress = answered_count / total_questions
-        st.progress(progress, text=f"{progress:.0%} пройдено")
+        if total_questions > 0:
+            progress = answered_count / total_questions
+            st.progress(progress, text=f"{progress:.0%} пройдено")
 
-        if answered_count == total_questions:
-            st.balloons()
-            st.success("Поздравляем! Вы изучили всю категорию!")
+            if answered_count == total_questions:
+                st.balloons()
+                st.success("Поздравляем! Вы изучили всю категорию!")
