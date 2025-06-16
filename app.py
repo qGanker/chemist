@@ -3,9 +3,11 @@
 import streamlit as st
 import random
 from rdkit import Chem
+from rdkit.Chem import inchi # --- НОВОЕ: Импортируем модуль для InChI ---
 from streamlit_ketcher import st_ketcher
 
 # ================== БАЗА ДАННЫХ СО SMILES И ФАКТАМИ ==================
+# (Этот блок остается без изменений)
 chemical_data_full = {
     "Ароматические системы": {
         "Бензол": {"молекулярная": "C6H6", "структурная": "C6H6", "smiles": "c1ccccc1", "факт": "Простейший ароматический углеводород."},
@@ -36,6 +38,7 @@ chemical_data_full = {
 # =====================================================================
 
 # --- Инициализация состояния сессии ---
+# (Без изменений)
 if 'answered_questions' not in st.session_state:
     st.session_state.answered_questions = []
 if 'current_question' not in st.session_state:
@@ -47,20 +50,29 @@ if 'game_mode' not in st.session_state:
 if 'user_drawing' not in st.session_state:
     st.session_state.user_drawing = ""
 
-def compare_smiles(smiles1, smiles2):
-    """Сравнивает две строки SMILES, приводя их к каноническому виду."""
+# --- ИЗМЕНЕНО: Новая, более надежная функция сравнения структур ---
+def compare_structures(smiles1, smiles2):
+    """Сравнивает две структуры через их InChIKey."""
     if not smiles1 or not smiles2:
         return False
+    
+    # Создаем молекулы из SMILES
     mol1 = Chem.MolFromSmiles(smiles1)
     mol2 = Chem.MolFromSmiles(smiles2)
+    
+    # Если не удалось распознать одну из структур
     if mol1 is None or mol2 is None:
         return False
-    canon_smiles1 = Chem.MolToSmiles(mol1, canonical=True)
-    canon_smiles2 = Chem.MolToSmiles(mol2, canonical=True)
-    return canon_smiles1 == canon_smiles2
+        
+    # Конвертируем в InChIKey - "цифровой отпечаток" молекулы
+    key1 = inchi.MolToInchiKey(mol1)
+    key2 = inchi.MolToInchiKey(mol2)
+    
+    # Сравниваем отпечатки. Они будут одинаковыми, даже если молекула нарисована по-разному.
+    return key1 == key2
 
+# --- Функции reset_game и get_new_question остаются без изменений ---
 def reset_game(category, mode):
-    """Сбрасывает игру для выбранной категории и режима."""
     st.session_state.answered_questions = []
     st.session_state.game_mode = mode
     st.session_state.user_drawing = ""
@@ -68,7 +80,6 @@ def reset_game(category, mode):
     st.session_state.show_answer = False
 
 def get_new_question(category):
-    """Генерирует новый, еще не заданный вопрос."""
     st.session_state.show_answer = False
     st.session_state.user_drawing = ""
     full_list = list(chemical_data_full[category].keys())
@@ -126,7 +137,8 @@ else:
                 st.rerun()
 
         if st.session_state.show_answer:
-            is_correct = compare_smiles(st.session_state.user_drawing, q['smiles'])
+            # --- ИЗМЕНЕНО: Вызываем новую функцию для сравнения ---
+            is_correct = compare_structures(st.session_state.user_drawing, q['smiles'])
 
             if is_correct:
                 st.success("✅ Абсолютно верно! Отличная работа!")
@@ -134,7 +146,6 @@ else:
                     st.session_state.answered_questions.append(q['name'])
             else:
                 st.error("❌ Структура неверна. Вот правильный ответ:")
-                # --- ИСПРАВЛЕНО: Убран неподдерживаемый параметр 'disabled=True' ---
                 st_ketcher(value=q['smiles'], key="ketcher_solution")
 
             st.markdown(f"**💡 Интересный факт:** {q['fact']}")
@@ -144,6 +155,7 @@ else:
                 st.rerun()
                 
     else:
+        # --- Код для текстовых режимов остается без изменений ---
         col1, col2 = st.columns([2, 1.5])
         with col1:
             if mode == "Стандартный (Название -> Формула)":
