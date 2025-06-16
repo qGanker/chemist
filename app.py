@@ -6,6 +6,7 @@ from rdkit import Chem
 from streamlit_ketcher import st_ketcher
 
 # ================== БАЗА ДАННЫХ СО SMILES И ФАКТАМИ ==================
+# (Этот блок остается без изменений)
 chemical_data_full = {
     "Ароматические системы": {
         "Бензол": {"молекулярная": "C6H6", "структурная": "C6H6", "smiles": "c1ccccc1", "факт": "Простейший ароматический углеводород."},
@@ -44,6 +45,9 @@ if 'show_answer' not in st.session_state:
     st.session_state.show_answer = False
 if 'game_mode' not in st.session_state:
     st.session_state.game_mode = "Стандартный (Название -> Формула)"
+# --- НОВОЕ: Переменная для хранения SMILES, нарисованного пользователем ---
+if 'user_drawing' not in st.session_state:
+    st.session_state.user_drawing = ""
 
 def compare_smiles(smiles1, smiles2):
     """Сравнивает две строки SMILES, приводя их к каноническому виду."""
@@ -61,12 +65,14 @@ def reset_game(category, mode):
     """Сбрасывает игру для выбранной категории и режима."""
     st.session_state.answered_questions = []
     st.session_state.game_mode = mode
+    st.session_state.user_drawing = "" # Сбрасываем рисунок
     get_new_question(category)
     st.session_state.show_answer = False
 
 def get_new_question(category):
     """Генерирует новый, еще не заданный вопрос."""
     st.session_state.show_answer = False
+    st.session_state.user_drawing = "" # Сбрасываем рисунок
     full_list = list(chemical_data_full[category].keys())
     unanswered_list = [q for q in full_list if q not in st.session_state.answered_questions]
     if not unanswered_list:
@@ -79,10 +85,8 @@ def get_new_question(category):
     st.session_state.current_question = {
         "name": compound_name,
         "formula_type": formula_type,
-        "formula": data.get("formula", ""), # Используем .get() для безопасности
-        "smiles": data.get("smiles", ""), # Используем .get() для безопасности
-        # --- ИСПРАВЛЕНИЕ: Используем data.get() вместо data[] ---
-        # Это предотвратит падение, если "факт" отсутствует.
+        "formula": data.get("formula", ""),
+        "smiles": data.get("smiles", ""),
         "fact": data.get("fact", "Интересный факт для этого соединения еще не добавлен.")
     }
 
@@ -111,32 +115,44 @@ else:
     q = st.session_state.current_question
     mode = st.session_state.game_mode
 
+    # --- ИЗМЕНЕНО: Полностью переработана логика для режима рисования ---
     if mode == "✍️ Режим рисования (Название -> Структура)":
         st.subheader("Нарисуйте структурную формулу для:")
         st.info(f"## {q['name']}")
         
-        smiles_drawn = st_ketcher(value=None, key="ketcher_canvas")
-        
-        if st.button("Проверить рисунок", use_container_width=True):
-            if compare_smiles(smiles_drawn, q['smiles']):
+        # БЛОК 1: Если ответ еще не был показан, показываем холст для рисования
+        if not st.session_state.show_answer:
+            user_smiles = st_ketcher(key="ketcher_input")
+            
+            if st.button("Проверить рисунок", use_container_width=True):
+                st.session_state.user_drawing = user_smiles # Сохраняем рисунок пользователя
+                st.session_state.show_answer = True # Устанавливаем флаг, что нужно показать ответ
+                st.rerun() # Перезапускаем приложение, чтобы обновить интерфейс
+
+        # БЛОК 2: Если ответ нужно показать
+        if st.session_state.show_answer:
+            is_correct = compare_smiles(st.session_state.user_drawing, q['smiles'])
+
+            if is_correct:
                 st.success("✅ Абсолютно верно! Отличная работа!")
                 if q['name'] not in st.session_state.answered_questions:
                     st.session_state.answered_questions.append(q['name'])
             else:
-                st.error("❌ Структура неверна. Попробуйте еще раз.")
-            
-            st.session_state.show_answer = True
-            st.rerun()
+                st.error("❌ Структура неверна. Вот правильный ответ:")
+                # Показываем холст с правильной структурой, который нельзя редактировать
+                st_ketcher(value=q['smiles'], key="ketcher_solution", disabled=True)
 
-        if st.session_state.show_answer:
             st.markdown(f"**💡 Интересный факт:** {q['fact']}")
+            
             if st.button("Следующий вопрос", use_container_width=True):
                 get_new_question(selected_category)
                 st.rerun()
-                
+
+    # --- Остальные режимы остаются без изменений ---
     else:
         col1, col2 = st.columns([2, 1.5])
         with col1:
+            # ... (код для текстовых режимов остается таким же) ...
             if mode == "Стандартный (Название -> Формула)":
                 st.write(f"Введите **{q['formula_type']}** формулу для соединения:")
                 st.info(f"## {q['name']}")
