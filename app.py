@@ -35,34 +35,40 @@ chemical_data_full = {
 }
 # =====================================================================
 
-# --- Инициализация состояния сессии ---
-# ... (остается без изменений) ...
+# --- ИСПРАВЛЕНИЕ: Этот блок должен быть здесь, в начале скрипта ---
+# Он гарантирует, что все переменные в session_state существуют до их первого использования.
+if 'answered_questions' not in st.session_state:
+    st.session_state.answered_questions = []
+if 'current_question' not in st.session_state:
+    st.session_state.current_question = None
+if 'show_answer' not in st.session_state:
+    st.session_state.show_answer = False
+if 'game_mode' not in st.session_state:
+    st.session_state.game_mode = "Стандартный (Название -> Формула)"
+# --------------------------------------------------------------------
 
-# --- НОВОЕ: Функция для сравнения нарисованной структуры с правильной ---
+
 def compare_smiles(smiles1, smiles2):
     """Сравнивает две строки SMILES, приводя их к каноническому виду."""
+    if not smiles1 or not smiles2:
+        return False
     mol1 = Chem.MolFromSmiles(smiles1)
     mol2 = Chem.MolFromSmiles(smiles2)
-    
-    # Если не удалось распознать одну из структур
     if mol1 is None or mol2 is None:
         return False
-        
-    # Приводим SMILES к стандартному (каноническому) виду для корректного сравнения
     canon_smiles1 = Chem.MolToSmiles(mol1, canonical=True)
     canon_smiles2 = Chem.MolToSmiles(mol2, canonical=True)
-    
     return canon_smiles1 == canon_smiles2
 
-
-# --- Все остальные функции (reset_game, get_new_question) остаются без изменений ---
 def reset_game(category, mode):
+    """Сбрасывает игру для выбранной категории и режима."""
     st.session_state.answered_questions = []
     st.session_state.game_mode = mode
     get_new_question(category)
     st.session_state.show_answer = False
 
 def get_new_question(category):
+    """Генерирует новый, еще не заданный вопрос."""
     st.session_state.show_answer = False
     full_list = list(chemical_data_full[category].keys())
     unanswered_list = [q for q in full_list if q not in st.session_state.answered_questions]
@@ -90,7 +96,6 @@ with st.sidebar:
     categories = list(chemical_data_full.keys())
     selected_category = st.selectbox("1. Выберите категорию:", categories, index=0)
     
-    # --- НОВОЕ: Добавлен режим рисования ---
     selected_mode = st.radio(
         "2. Выберите режим:",
         ["Стандартный (Название -> Формула)", "Обратный (Формула -> Название)", "✍️ Режим рисования (Название -> Структура)"],
@@ -101,19 +106,19 @@ with st.sidebar:
         reset_game(selected_category, selected_mode)
         st.rerun()
 
+# --- Основная часть экрана ---
+# Теперь эта проверка будет работать корректно, т.к. st.session_state.current_question уже создан
 if not st.session_state.current_question:
     st.info("Выберите категорию и режим в меню слева, затем нажмите 'Начать / Сбросить игру'.")
 else:
     q = st.session_state.current_question
     mode = st.session_state.game_mode
 
-    # --- НОВОЕ: Логика для режима рисования ---
     if mode == "✍️ Режим рисования (Название -> Структура)":
         st.subheader("Нарисуйте структурную формулу для:")
         st.info(f"## {q['name']}")
         
-        # Вызов компонента для рисования
-        smiles_drawn = st_ketcher(key="ketcher_canvas")
+        smiles_drawn = st_ketcher(value=None, key="ketcher_canvas")
         
         if st.button("Проверить рисунок", use_container_width=True):
             if compare_smiles(smiles_drawn, q['smiles']):
@@ -132,14 +137,14 @@ else:
                 get_new_question(selected_category)
                 st.rerun()
                 
-    else: # --- Старые режимы (текстовый ввод) ---
+    else:
         col1, col2 = st.columns([2, 1.5])
         with col1:
             if mode == "Стандартный (Название -> Формула)":
                 st.write(f"Введите **{q['formula_type']}** формулу для соединения:")
                 st.info(f"## {q['name']}")
                 correct_answer = q['formula']
-            else: # Обратный режим
+            else:
                 st.write(f"Введите **название** соединения для формулы:")
                 st.info(f"## `{q['formula']}`")
                 correct_answer = q['name']
@@ -148,7 +153,7 @@ else:
 
             if st.button("Проверить", disabled=st.session_state.show_answer, use_container_width=True):
                 cleaned_user = user_answer.strip().upper().replace("-", "")
-                cleaned_correct = correct_answer.strip().upper().replace("-", "") if mode == "Стандартный (Название -> Формула)" else correct_answer.strip().upper()
+                cleaned_correct = correct_answer.strip().upper() if mode == "Обратный (Формула -> Название)" else correct_answer.strip().upper().replace("-", "")
                 
                 if cleaned_user == cleaned_correct:
                     st.success("✅ Правильно!")
