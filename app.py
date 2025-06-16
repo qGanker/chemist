@@ -50,46 +50,37 @@ if 'game_mode' not in st.session_state:
 if 'user_drawing' not in st.session_state:
     st.session_state.user_drawing = ""
 
-# --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Гибридная функция сравнения ---
-def compare_structures(smiles_drawn, smiles_correct):
+# --- НОВОЕ: Универсальный парсер для чтения структур ---
+def mol_from_input(input_data):
     """
-    Гибридное сравнение: сначала по InChIKey (хорошо для таутомеров),
-    затем по форме Кекуле (хорошо для ароматики).
+    Создает молекулу RDKit из разных форматов (SMILES или Molblock).
     """
-    if not smiles_drawn or not smiles_correct:
-        return False
-    
-    mol_drawn = Chem.MolFromSmiles(smiles_drawn)
-    mol_correct = Chem.MolFromSmiles(smiles_correct)
+    if not input_data:
+        return None
+    # Если в строке есть перенос - это, скорее всего, Molblock
+    if '\n' in input_data:
+        return Chem.MolFromMolBlock(input_data)
+    # Иначе, это SMILES
+    else:
+        return Chem.MolFromSmiles(input_data)
+
+# --- ИЗМЕНЕНО: Функция сравнения теперь использует новый парсер ---
+def compare_structures(input_drawn, smiles_correct):
+    """
+    Сравнивает структуры по InChIKey, используя универсальный парсер.
+    """
+    # Используем новый парсер для обоих входов для единообразия
+    mol_drawn = mol_from_input(input_drawn)
+    mol_correct = mol_from_input(smiles_correct)
 
     if mol_drawn is None or mol_correct is None:
         return False
-
-    # --- Метод 1: Сравнение по InChIKey (надежно для таутомеров) ---
-    try:
-        key_drawn = inchi.MolToInchiKey(mol_drawn)
-        key_correct = inchi.MolToInchiKey(mol_correct)
-        if key_drawn == key_correct:
-            return True
-    except:
-        pass # Если InChI не сработал, ничего страшного, идем дальше
-
-    # --- Метод 2: Сравнение по форме Кекуле (надежно для ароматических колец) ---
-    try:
-        Chem.Kekulize(mol_drawn)
-        Chem.Kekulize(mol_correct)
         
-        kekule_smiles_drawn = Chem.MolToSmiles(mol_drawn, canonical=True, kekuleSmiles=True)
-        kekule_smiles_correct = Chem.MolToSmiles(mol_correct, canonical=True, kekuleSmiles=True)
-        
-        if kekule_smiles_drawn == kekule_smiles_correct:
-            return True
-    except:
-        pass # Если и кекулизация не удалась, значит структуры разные
-
-    # Если ни один метод не подтвердил сходство
-    return False
-
+    # Возвращаемся к надежному сравнению по InChIKey, т.к. теперь у нас есть корректные молекулы
+    key_drawn = inchi.MolToInchiKey(mol_drawn)
+    key_correct = inchi.MolToInchiKey(mol_correct)
+    
+    return key_drawn == key_correct
 
 # --- Остальные функции (reset_game, get_new_question) остаются без изменений ---
 def reset_game(category, mode):
@@ -144,21 +135,20 @@ else:
     q = st.session_state.current_question
     mode = st.session_state.game_mode
 
-    # Логика для режима рисования (без изменений)
     if mode == "✍️ Режим рисования (Название -> Структура)":
         st.subheader("Нарисуйте структурную формулу для:")
         st.info(f"## {q['name']}")
         st.caption("Совет: старайтесь рисовать только одну молекулу для ответа.")
         
         if not st.session_state.show_answer:
-            user_smiles = st_ketcher(key="ketcher_input")
+            # Важно: Ketcher может возвращать SMILES или Molblock, наша функция теперь это учтет
+            user_input_data = st_ketcher(key="ketcher_input")
             if st.button("Проверить рисунок", use_container_width=True):
-                st.session_state.user_drawing = user_smiles
+                st.session_state.user_drawing = user_input_data
                 st.session_state.show_answer = True
                 st.rerun()
 
         if st.session_state.show_answer:
-            # Используем нашу новую гибридную функцию
             is_correct = compare_structures(st.session_state.user_drawing, q['smiles'])
 
             if is_correct:
