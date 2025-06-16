@@ -50,11 +50,11 @@ if 'game_mode' not in st.session_state:
 if 'user_drawing' not in st.session_state:
     st.session_state.user_drawing = ""
 
-# --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Самый надежный метод сравнения ---
+# --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Гибридная функция сравнения ---
 def compare_structures(smiles_drawn, smiles_correct):
     """
-    Сравнивает структуры, приводя обе к канонической форме Кекуле.
-    Это решает проблемы с разными представлениями ароматических колец.
+    Гибридное сравнение: сначала по InChIKey (хорошо для таутомеров),
+    затем по форме Кекуле (хорошо для ароматики).
     """
     if not smiles_drawn or not smiles_correct:
         return False
@@ -65,23 +65,31 @@ def compare_structures(smiles_drawn, smiles_correct):
     if mol_drawn is None or mol_correct is None:
         return False
 
-    # 1. Принудительно кекулизируем обе молекулы (превращаем в структуры с явными связями)
+    # --- Метод 1: Сравнение по InChIKey (надежно для таутомеров) ---
+    try:
+        key_drawn = inchi.MolToInchiKey(mol_drawn)
+        key_correct = inchi.MolToInchiKey(mol_correct)
+        if key_drawn == key_correct:
+            return True
+    except:
+        pass # Если InChI не сработал, ничего страшного, идем дальше
+
+    # --- Метод 2: Сравнение по форме Кекуле (надежно для ароматических колец) ---
     try:
         Chem.Kekulize(mol_drawn)
         Chem.Kekulize(mol_correct)
-    except:
-        # Если кекулизация не удалась, возвращаемся к старому методу InChIKey как запаснму
-        key_drawn = inchi.MolToInchiKey(mol_drawn)
-        key_correct = inchi.MolToInchiKey(mol_correct)
-        return key_drawn == key_correct
         
-    # 2. Превращаем кекулизированные молекулы в канонический SMILES
-    # kekuleSmiles=True гарантирует, что на выходе будет структура с явными связями
-    kekule_smiles_drawn = Chem.MolToSmiles(mol_drawn, canonical=True, kekuleSmiles=True)
-    kekule_smiles_correct = Chem.MolToSmiles(mol_correct, canonical=True, kekuleSmiles=True)
+        kekule_smiles_drawn = Chem.MolToSmiles(mol_drawn, canonical=True, kekuleSmiles=True)
+        kekule_smiles_correct = Chem.MolToSmiles(mol_correct, canonical=True, kekuleSmiles=True)
+        
+        if kekule_smiles_drawn == kekule_smiles_correct:
+            return True
+    except:
+        pass # Если и кекулизация не удалась, значит структуры разные
 
-    # 3. Сравниваем стандартизированные строки
-    return kekule_smiles_drawn == kekule_smiles_correct
+    # Если ни один метод не подтвердил сходство
+    return False
+
 
 # --- Остальные функции (reset_game, get_new_question) остаются без изменений ---
 def reset_game(category, mode):
@@ -150,7 +158,7 @@ else:
                 st.rerun()
 
         if st.session_state.show_answer:
-            # Используем нашу новую супер-надежную функцию
+            # Используем нашу новую гибридную функцию
             is_correct = compare_structures(st.session_state.user_drawing, q['smiles'])
 
             if is_correct:
