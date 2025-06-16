@@ -1,3 +1,4 @@
 streamlit
-rdkit-pypi
-streamlit-jsme
+streamlit-drawable-canvas
+pandas
+numpy
